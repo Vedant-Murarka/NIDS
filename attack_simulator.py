@@ -161,6 +161,32 @@ def send_ssh_patator(target_ip):
     except KeyboardInterrupt:
         print(f"\n{C_YELLOW}[!] SSH-Patator simulation aborted by user.{C_RESET}")
 
+def send_ftp_patator(target_ip):
+    print(f"\n{C_RED}[+] Simulating FTP-Patator (FTP Brute Force) on {target_ip}...{C_RESET}")
+    print("Generating rapid connection attempts to port 21 with dummy login payloads...")
+    
+    sport = 40001
+    dport = 21
+    
+    packet_count = 8
+    try:
+        for count in range(1, packet_count + 1):
+            # Send TCP SYN packet to port 21
+            syn_pkt = IP(dst=target_ip)/TCP(sport=sport, dport=dport, flags="S")
+            send(syn_pkt, verbose=0)
+            time.sleep(0.05)
+            
+            # Send dummy login payload
+            payload = f"USER admin\r\nPASS password{count}\r\n"
+            payload_pkt = IP(dst=target_ip)/TCP(sport=sport, dport=dport, flags="PA")/Raw(load=payload)
+            send(payload_pkt, verbose=0)
+            
+            print(f"Sent FTP login attempt {count}/{packet_count}...")
+            time.sleep(0.4) # Spaced attempts
+        print(f"{C_GREEN}[SUCCESS] FTP-Patator simulation complete.{C_RESET}")
+    except KeyboardInterrupt:
+        print(f"\n{C_YELLOW}[!] FTP-Patator simulation aborted by user.{C_RESET}")
+
 def get_default_target_ip(local_ip):
     # Defaulting to 1.1.1.1 forces Windows to route traffic externally through the default gateway,
     # which resolves the MAC address instantly and avoids local ARP warning messages/timeouts.
@@ -189,9 +215,10 @@ def main():
         print(f"  3. {C_RED}DoS Flood Attack{C_RESET} (Asymmetric flood of packets to a single port)")
         print(f"  4. {C_MAGENTA}Fuzzer Attack{C_RESET} (Malformed packets with randomized sizes)")
         print(f"  5. {C_RED}SSH-Patator Attack{C_RESET} (SSH Brute Force login attempts)")
-        print("  6. Exit")
+        print(f"  6. {C_RED}FTP-Patator Attack{C_RESET} (FTP Brute Force login attempts)")
+        print("  7. Exit")
         
-        choice = input("Enter choice (1-6): ").strip()
+        choice = input("Enter choice (1-7): ").strip()
         if choice == '1':
             send_benign_traffic(target_ip)
         elif choice == '2':
@@ -203,6 +230,8 @@ def main():
         elif choice == '5':
             send_ssh_patator(target_ip)
         elif choice == '6':
+            send_ftp_patator(target_ip)
+        elif choice == '7':
             print("Exiting simulator. Goodbye!")
             break
         else:
