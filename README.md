@@ -28,6 +28,7 @@ This project is an advanced, educational **Hybrid Machine Learning Network Intru
 ├── attack_simulator.py      # Educational packet injection CLI tool
 ├── nids_model.joblib        # Compiled UNSW-NB15 Random Forest weights
 ├── cicids_model.joblib      # Compiled CICIDS-2017 Random Forest weights
+├── requirements.txt         # Project package dependencies
 └── README.md                # Documentation
 ```
 
@@ -49,7 +50,7 @@ venv\Scripts\Activate.ps1
 
 ### Step 2: Install Dependencies
 ```powershell
-pip install scapy pandas numpy scikit-learn joblib
+pip install -r requirements.txt
 ```
 
 ---
