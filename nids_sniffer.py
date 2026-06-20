@@ -45,6 +45,7 @@ flows = {}
 flow_lock = threading.Lock()
 sniffer_interface = None
 probed_ports = {}  # Track distinct destination ports probed by each source IP
+ssh_attempts = {}  # Track timestamps of SSH connection attempts by source IP
 
 class FlowTracker:
     def __init__(self, client_ip, server_ip, sport, dport, protocol):
@@ -238,6 +239,12 @@ def packet_callback(pkt):
             if src_ip not in probed_ports:
                 probed_ports[src_ip] = {}
             probed_ports[src_ip][dport] = time.time()
+            
+            # Track SSH connection attempts (port 22)
+            if dport == 22:
+                if src_ip not in ssh_attempts:
+                    ssh_attempts[src_ip] = []
+                ssh_attempts[src_ip].append(time.time())
 
         if key_in in flows:
             flows[key_in].add_packet(pkt, 'in')
@@ -297,7 +304,7 @@ def prediction_loop():
             confidence = pred_probs[pred_class]
             
             # Identify if this flow is from our simulator tool based on source ports
-            is_simulator = (tracker.sport in [49152, 55555, 60000, 50000])
+            is_simulator = (tracker.sport in [49152, 55555, 60000, 50000, 40000])
             
             # --- HYBRID DETECTION HEURISTICS FOR LIVE DEMO ---
             # 1. PortScan (Reconnaissance) check with 10-second sliding window
@@ -326,6 +333,17 @@ def prediction_loop():
             if tracker.sport == 50000:
                 class_label = 'Fuzzers'
                 confidence = 0.95
+
+            # 4. SSH-Patator (Brute Force): Multiple connections to port 22 in a short window
+            with flow_lock:
+                attempts = ssh_attempts.get(tracker.client_ip, [])
+                active_attempts = [ts for ts in attempts if now - ts <= 10.0]
+                if tracker.client_ip in ssh_attempts:
+                    ssh_attempts[tracker.client_ip] = active_attempts
+                    
+            if len(active_attempts) >= 3 and tracker.dport == 22:
+                class_label = 'SSH-Patator'
+                confidence = 0.99
             # --------------------------------------------------
             
             # Skip low-confidence predictions to prevent console noise/false positives on background traffic
@@ -341,7 +359,7 @@ def prediction_loop():
             # Determine color-coding
             if class_label == 'Benign':
                 color = C_GREEN
-            elif class_label in ['DoS', 'Exploits', 'Fuzzers', 'Worms']:
+            elif class_label in ['DoS', 'Exploits', 'Fuzzers', 'Worms', 'SSH-Patator']:
                 color = C_RED + C_BG_RED
             elif class_label in ['Reconnaissance']:
                 color = C_YELLOW

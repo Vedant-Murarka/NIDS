@@ -135,6 +135,32 @@ def send_fuzzer(target_ip):
     except KeyboardInterrupt:
         print(f"\n{C_RED}[!] Fuzzer simulation aborted by user.{C_RESET}")
 
+def send_ssh_patator(target_ip):
+    print(f"\n{C_RED}[+] Simulating SSH-Patator (SSH Brute Force) on {target_ip}...{C_RESET}")
+    print("Generating rapid connection attempts to port 22 with dummy login payloads...")
+    
+    sport = 40000
+    dport = 22
+    
+    packet_count = 8
+    try:
+        for count in range(1, packet_count + 1):
+            # Send TCP SYN packet to port 22
+            syn_pkt = IP(dst=target_ip)/TCP(sport=sport, dport=dport, flags="S")
+            send(syn_pkt, verbose=0)
+            time.sleep(0.05)
+            
+            # Send dummy login payload
+            payload = f"SSH-2.0-OpenSSH_8.2\nLogin attempt {count}: user=admin pass=password{count}\n"
+            payload_pkt = IP(dst=target_ip)/TCP(sport=sport, dport=dport, flags="PA")/Raw(load=payload)
+            send(payload_pkt, verbose=0)
+            
+            print(f"Sent login attempt {count}/{packet_count}...")
+            time.sleep(0.4) # Spaced attempts
+        print(f"{C_GREEN}[SUCCESS] SSH-Patator simulation complete.{C_RESET}")
+    except KeyboardInterrupt:
+        print(f"\n{C_YELLOW}[!] SSH-Patator simulation aborted by user.{C_RESET}")
+
 def get_default_target_ip(local_ip):
     # Defaulting to 1.1.1.1 forces Windows to route traffic externally through the default gateway,
     # which resolves the MAC address instantly and avoids local ARP warning messages/timeouts.
@@ -162,9 +188,10 @@ def main():
         print(f"  2. {C_YELLOW}PortScan Attack{C_RESET} (Reconnaissance scan across common ports)")
         print(f"  3. {C_RED}DoS Flood Attack{C_RESET} (Asymmetric flood of packets to a single port)")
         print(f"  4. {C_MAGENTA}Fuzzer Attack{C_RESET} (Malformed packets with randomized sizes)")
-        print("  5. Exit")
+        print(f"  5. {C_RED}SSH-Patator Attack{C_RESET} (SSH Brute Force login attempts)")
+        print("  6. Exit")
         
-        choice = input("Enter choice (1-5): ").strip()
+        choice = input("Enter choice (1-6): ").strip()
         if choice == '1':
             send_benign_traffic(target_ip)
         elif choice == '2':
@@ -174,6 +201,8 @@ def main():
         elif choice == '4':
             send_fuzzer(target_ip)
         elif choice == '5':
+            send_ssh_patator(target_ip)
+        elif choice == '6':
             print("Exiting simulator. Goodbye!")
             break
         else:
