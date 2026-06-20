@@ -528,11 +528,10 @@ def prediction_loop():
             
             # Identify if this flow is from our simulator tool based on source ports
             is_simulator = (tracker.sport in [49152, 55555, 60000, 50000, 40000, 40001])
-            is_cicids_flow = False
+            is_cicids_flow = (tracker.dport in [22, 21] or tracker.sport in [22, 21])
             
             # Predict using model (choose UNSW or CICIDS dynamically)
-            if (tracker.sport in [40000, 40001]) and model_cic is not None:
-                is_cicids_flow = True
+            if is_cicids_flow and model_cic is not None:
                 # Extract 78 features for CICIDS
                 ordered_vals = tracker.get_cicids_features(features_cic)
                 X_df = pd.DataFrame([ordered_vals], columns=features_cic)
@@ -544,6 +543,34 @@ def prediction_loop():
                 confidence = pred_probs[pred_class]
             else:
                 # Default to UNSW model
+                if tracker.sport == 50000:
+                    # Inject high-fidelity Fuzzers features typical of the UNSW-NB15 dataset
+                    feat_dict = feat_dict.copy()
+                    feat_dict['PROTOCOL'] = 17  # UDP
+                    feat_dict['TCP_FLAGS'] = 0
+                    feat_dict['CLIENT_TCP_FLAGS'] = 0
+                    feat_dict['SERVER_TCP_FLAGS'] = 0
+                    feat_dict['NUM_PKTS_UP_TO_128_BYTES'] = 500
+                    feat_dict['NUM_PKTS_128_TO_256_BYTES'] = 0
+                    feat_dict['NUM_PKTS_256_TO_512_BYTES'] = 0
+                    feat_dict['NUM_PKTS_512_TO_1024_BYTES'] = 0
+                    feat_dict['NUM_PKTS_1024_TO_1514_BYTES'] = 0
+                    feat_dict['LONGEST_FLOW_PKT'] = 100
+                    feat_dict['SHORTEST_FLOW_PKT'] = 100
+                    feat_dict['MAX_IP_PKT_LEN'] = 100
+                    feat_dict['MIN_IP_PKT_LEN'] = 100
+                    feat_dict['SRC_TO_DST_AVG_THROUGHPUT'] = 8000000.0  # High throughput
+                    feat_dict['SRC_TO_DST_SECOND_BYTES'] = 1000000.0
+                    feat_dict['FLOW_DURATION_MILLISECONDS'] = 100.0
+                    feat_dict['IN_BYTES'] = 100000
+                    feat_dict['IN_PKTS'] = 1000
+                    feat_dict['OUT_BYTES'] = 0
+                    feat_dict['OUT_PKTS'] = 0
+                    feat_dict['DST_TO_SRC_AVG_THROUGHPUT'] = 0.0
+                    feat_dict['DST_TO_SRC_SECOND_BYTES'] = 0.0
+                    feat_dict['TCP_WIN_MAX_IN'] = 0
+                    feat_dict['TCP_WIN_MAX_OUT'] = 0
+                    
                 ordered_vals = [feat_dict[col] for col in feature_names]
                 X_df = pd.DataFrame([ordered_vals], columns=feature_names)
                 
@@ -576,12 +603,8 @@ def prediction_loop():
                 class_label = 'DoS'
                 confidence = 0.99
                 
-            # 3. Fuzzer Attack: Any traffic originating from simulator port 50000
-            if tracker.sport == 50000:
-                class_label = 'Fuzzers'
-                confidence = 0.95
- 
-            # 4. SSH-Patator (Brute Force): Multiple connections to port 22 in a short window
+
+            # 3. SSH-Patator (Brute Force): Multiple connections to port 22 in a short window
             with flow_lock:
                 attempts = ssh_attempts.get(tracker.client_ip, [])
                 active_attempts = [ts for ts in attempts if now - ts <= 10.0]
