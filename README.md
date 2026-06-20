@@ -10,6 +10,8 @@ This project is an advanced, educational **Hybrid Machine Learning Network Intru
   * **UNSW-NB15 Model**: Classified using a 39-feature Random Forest model to detect general attacks (`DoS`, `Exploits`, `Fuzzers`, `Reconnaissance`, etc.).
   * **CICIDS-2017 Model**: Classified using a 78-feature specialized Random Forest model to identify brute-force logins (`SSH-Patator` and `FTP-Patator`).
 * **Real-time Feature Extractor**: Reconstructs multi-stage flow metrics (durations, packet sizes, window flags, standard deviations, and throughputs) dynamically from physical network traffic.
+* **Explainable AI (XAI) with SHAP**: Uses game-theory-based Shapley explanations (`shap.TreeExplainer`) to dissect the classification decisions of the models on-the-fly when attacks are flagged.
+* **Layman Narrative Translators**: Converts complex network terminology (e.g. `Init_Win_bytes_forward`) into intuitive descriptions (e.g. "Handshake buffer profile") and provides human-readable summary sentences for alerts.
 * **Interactive Attack Simulator**: A built-in traffic injection tool allowing you to test the NIDS live with 6 different traffic profiles:
   1. `Benign` HTTP requests.
   2. `PortScan` reconnaissance scans.

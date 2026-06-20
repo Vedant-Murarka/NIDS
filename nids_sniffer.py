@@ -56,6 +56,15 @@ if os.path.exists(CICIDS_MODEL_PATH):
 else:
     print(f"{C_YELLOW}[NIDS STARTUP] Warning: {CICIDS_MODEL_PATH} not found. CICIDS model detection features will be disabled.{C_RESET}")
 
+# Initialize SHAP Explainers (Explainable AI)
+print(f"{C_BLUE}[NIDS STARTUP] Initializing SHAP TreeExplainers...{C_RESET}")
+import shap
+explainer_unsw = shap.TreeExplainer(model)
+explainer_cic = None
+if model_cic is not None:
+    explainer_cic = shap.TreeExplainer(model_cic)
+print(f"{C_GREEN}[NIDS STARTUP] SHAP Explainers initialized successfully!{C_RESET}")
+
 # Global state
 flows = {}
 flow_lock = threading.Lock()
@@ -519,9 +528,11 @@ def prediction_loop():
             
             # Identify if this flow is from our simulator tool based on source ports
             is_simulator = (tracker.sport in [49152, 55555, 60000, 50000, 40000, 40001])
+            is_cicids_flow = False
             
             # Predict using model (choose UNSW or CICIDS dynamically)
             if (tracker.sport in [40000, 40001]) and model_cic is not None:
+                is_cicids_flow = True
                 # Extract 78 features for CICIDS
                 ordered_vals = tracker.get_cicids_features(features_cic)
                 X_df = pd.DataFrame([ordered_vals], columns=features_cic)
@@ -608,6 +619,77 @@ def prediction_loop():
             print(f"%-25s %-6s {color}%-22s{C_RESET} %-12d %-12d %-10.2f%%" % (
                 src_str, proto_name, class_label, tracker.in_pkts, tracker.out_pkts, confidence * 100
             ))
+            
+            # Print SHAP Explainability / Narrative details for alerts
+            if class_label not in ['Benign', 'BENIGN']:
+                # 1. Determine layman narrative explanation based on class
+                if class_label == 'SSH-Patator':
+                    explanation = "Multiple rapid connection attempts were made from this IP to the SSH service (port 22) attempting to guess login credentials."
+                elif class_label == 'FTP-Patator':
+                    explanation = "Multiple rapid login attempts were made from this IP to the FTP service (port 21) attempting to brute force credentials."
+                elif class_label == 'Reconnaissance':
+                    explanation = "This IP probed multiple network ports in a short window to discover active services (reconnaissance/scanning)."
+                elif class_label == 'DoS':
+                    explanation = "A high-frequency unidirectional packet stream was sent with minimal responses, typical of a Denial of Service flood trying to overwhelm the target."
+                elif class_label == 'Fuzzers':
+                    explanation = "The packets contain randomized or high-entropy byte patterns designed to crash server-side input parser software."
+                else:
+                    explanation = "The flow contains traffic properties matching typical signature profiles of this attack class."
+                
+                print(f"      └── [Why flagged] {explanation}")
+                
+                # 2. Add technical SHAP drivers
+                try:
+                    feat_contribs = None
+                    if is_cicids_flow and explainer_cic is not None:
+                        # CICIDS Explainer
+                        target_class = class_label if class_label in le_cic.classes_ else ('FTP-Patator' if tracker.sport == 40001 else 'SSH-Patator')
+                        target_idx = list(le_cic.classes_).index(target_class)
+                        shap_vals = explainer_cic.shap_values(X_df)
+                        feat_contribs = shap_vals[0, :, target_idx]
+                        feat_list = features_cic
+                    elif not is_cicids_flow and explainer_unsw is not None:
+                        # UNSW Explainer
+                        if class_label in le.classes_:
+                            target_idx = list(le.classes_).index(class_label)
+                            shap_vals = explainer_unsw.shap_values(X_df)
+                            feat_contribs = shap_vals[0, :, target_idx]
+                            feat_list = feature_names
+                            
+                    if feat_contribs is not None:
+                        # Layman descriptions mapping for features
+                        layman_map = {
+                            'Destination Port': 'Target Network Port',
+                            'Init_Win_bytes_forward': 'Handshake buffer profile',
+                            'Init_Win_bytes_backward': 'Server response buffer profile',
+                            'Flow Duration': 'Flow duration',
+                            'Total Fwd Packets': 'Number of requests sent',
+                            'Total Backward Packets': 'Number of responses received',
+                            'Flow IAT Mean': 'Average delay between packets',
+                            'Flow Packets/s': 'Overall transmission speed',
+                            'Max Packet Length': 'Maximum request size',
+                            'Packet Length Variance': 'Packet size variation',
+                            'Packet Length Std': 'Packet size deviation',
+                            'Fwd Packet Length Std': 'Sender size variation',
+                            'Bwd Packet Length Std': 'Receiver size variation',
+                            'ACK Flag Count': 'Acknowledgment signals',
+                            'SYN Flag Count': 'Connection start signals',
+                            'PSH Flag Count': 'Immediate data push signals',
+                            'URG Flag Count': 'Urgent flag signals',
+                            'Average Packet Size': 'Average packet size',
+                            'Subflow Fwd Bytes': 'Total bytes sent',
+                            'Subflow Bwd Bytes': 'Total bytes received'
+                        }
+                        actual_values = X_df.iloc[0]
+                        mapped = list(zip(feat_list, feat_contribs, actual_values))
+                        # Filter positive contributions and sort descending
+                        sorted_contribs = sorted(mapped, key=lambda x: x[1], reverse=True)
+                        top_3 = [item for item in sorted_contribs if item[1] > 0.0][:3]
+                        if top_3:
+                            explanation_str = ", ".join([f"{layman_map.get(name, name)} (+{shap_val * 100:.1f}%)" for name, shap_val, val in top_3])
+                            print(f"          [SHAP Drivers] {explanation_str}")
+                except Exception:
+                    pass
 
 # Start the prediction analyzer in the background
 pred_thread = threading.Thread(target=prediction_loop, daemon=True)
